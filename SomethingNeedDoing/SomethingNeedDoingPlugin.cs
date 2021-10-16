@@ -1,7 +1,8 @@
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
-
+using FFXIVClientStructs;
+using Dalamud.Logging;
 namespace SomethingNeedDoing
 {
     /// <summary>
@@ -13,6 +14,8 @@ namespace SomethingNeedDoing
 
         private readonly WindowSystem windowSystem;
         private readonly MacroWindow macroWindow;
+        private EquipmentScanner? equipmentScanner;
+        private readonly EventHandler eventHandler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SomethingNeedDoingPlugin"/> class.
@@ -27,14 +30,18 @@ namespace SomethingNeedDoing
             Service.Configuration = SomethingNeedDoingConfiguration.Load(pluginInterface.ConfigDirectory);
             Service.Address = new PluginAddressResolver();
             Service.Address.Setup();
-
+            Resolver.Initialize();
+            equipmentScanner = new EquipmentScanner();
+            eventHandler = new EventHandler(equipmentScanner);
+            eventHandler.Start();
             Service.ChatManager = new ChatManager();
-            Service.MacroManager = new MacroManager();
+            Service.MacroManager = new MacroManager(eventHandler);
 
             this.macroWindow = new();
             this.windowSystem = new("SomethingNeedDoing");
             this.windowSystem.AddWindow(this.macroWindow);
-
+            float a = eventHandler.EquipmentScannerLastEquipmentData.LowestConditionPercent;
+            PluginLog.Log(a.ToString());
             Service.Interface.UiBuilder.Draw += this.windowSystem.Draw;
             Service.Interface.UiBuilder.OpenConfigUi += this.OnOpenConfigUi;
             Service.CommandManager.AddHandler(Command, new CommandInfo(this.OnChatCommand)
@@ -53,7 +60,7 @@ namespace SomethingNeedDoing
             Service.CommandManager.RemoveHandler(Command);
             Service.Interface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
             Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;
-
+            eventHandler?.Dispose();
             this.windowSystem.RemoveAllWindows();
 
             Service.MacroManager.Dispose();

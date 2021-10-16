@@ -26,6 +26,8 @@ namespace SomethingNeedDoing
         private static readonly Regex WaitCommand = new(@"^/wait\s+(?<time>\d+(?:\.\d+)?)(?:-(?<maxtime>\d+(?:\.\d+)?))?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex WaitAddonCommand = new(@"^/waitaddon\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex RequireCommand = new(@"^/require\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex CountCommand = new(@"^/conunt\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex RepairCommand = new(@"^/Repair\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex SendCommand = new(@"^/send\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex TargetCommand = new(@"^/target\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex ClickCommand = new(@"^/click\s+(?<name>.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -41,17 +43,16 @@ namespace SomethingNeedDoing
         private readonly ManualResetEvent dataAvailableWaiter = new(false);
         private readonly List<string> craftingActionNames = new();
         private readonly Hook<EventFrameworkDelegate> eventFrameworkHook;
-
         private CraftingState craftingData = default;
-
+        private readonly EventHandler eventHandler;
         /// <summary>
         /// Initializes a new instance of the <see cref="MacroManager"/> class.
         /// </summary>
-        public MacroManager()
+        public MacroManager(EventHandler eventHandler)
         {
             Service.ClientState.Login += this.OnLogin;
             Service.ClientState.Logout += this.OnLogout;
-
+            this.eventHandler = eventHandler;
             // Click.Initialize();
 
             this.PopulateCraftingActionNames();
@@ -64,7 +65,6 @@ namespace SomethingNeedDoing
 
             Task.Run(() => this.EventLoop(this.eventLoopTokenSource.Token));
         }
-
         private delegate IntPtr EventFrameworkDelegate(IntPtr a1, IntPtr a2, uint a3, ushort a4, IntPtr a5, IntPtr dataPtr, byte dataSize);
 
         /// <summary>
@@ -115,7 +115,8 @@ namespace SomethingNeedDoing
             this.loggedInWaiter.Dispose();
             this.pausedWaiter.Dispose();
         }
-
+        public  void Print(string a)
+        { Service.ChatGui.Print(a); }
         private void OnEventFrameworkDetour(IntPtr dataPtr, byte dataSize)
         {
             if (dataSize >= 4)
@@ -233,8 +234,14 @@ namespace SomethingNeedDoing
                     case "/runmacro":
                         this.ProcessRunMacroCommand(step);
                         break;
+                    case "/conunt":
+                        this.ProcessCountCommand(step, token);
+                        break;
                     case "/wait":
                         this.ProcessWaitCommand(step, token);
+                        break;
+                    case "/repair":
+                        this.ProcessReapaiCommand(step, token);
                         break;
                     case "/waitaddon":
                         this.ProcessWaitAddonCommand(step, token);
@@ -393,6 +400,52 @@ namespace SomethingNeedDoing
                 throw new InvalidMacroOperationException("Addon not visible");
         }
 
+        private void ProcessCountCommand(string step, CancellationToken token)
+        {
+            var maxwait = this.ExtractMaxWait(ref step, 1000);
+            var match = CountCommand.Match(step);
+            if (!match.Success)
+                throw new InvalidMacroOperationException("Syntax error");
+
+            var effectName = match.Groups["name"].Value.Trim(new char[] { ' ', '"', '\'' }).ToLower();
+            string[] array = effectName.Split(new char[]
+                {
+                    ','
+                });
+            var effect = array[0];
+            int effectConut = Convert.ToInt32(array[1]);
+            var sheet = Service.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Status>()!;
+            var effectIDs = sheet.Where(row => row.Name.RawString.ToLower() == effect).Select(row => row.RowId).ToList();
+
+            var hasEffect = this.LinearWaitFor(
+                250,
+                Convert.ToInt32(maxwait.TotalMilliseconds),
+                () => Service.ClientState.LocalPlayer!.StatusList.Where(i=>i.StackCount==effectConut).Select(se => se.StatusId).ToList().Intersect(effectIDs).Any(),
+                token);
+
+            if (!hasEffect)
+                throw new EffectNotPresentError("Effect not present");
+        }
+        private void ProcessReapaiCommand(string step, CancellationToken token)
+        {
+            var maxwait = this.ExtractMaxWait(ref step, 1000);
+            var a = eventHandler.EquipmentScannerLastEquipmentData.LowestConditionPercent;
+            var match = RepairCommand.Match(step);
+            if (!match.Success)
+                throw new InvalidMacroOperationException("Syntax error");
+
+            var condition = match.Groups["name"].Value.Trim(new char[] { ' ', '"', '\'' }).ToLower();
+
+            var repair = Convert.ToSingle(condition);
+
+            var hasEffect = this.LinearWaitFor(
+                250,
+                Convert.ToInt32(maxwait.TotalMilliseconds),
+                () => repair<a,
+                token);
+            if (!hasEffect)
+                throw new EffectNotPresentError("Effect not present");
+        }
         private void ProcessRequireCommand(string step, CancellationToken token)
         {
             var maxwait = this.ExtractMaxWait(ref step, 1000);
