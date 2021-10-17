@@ -324,7 +324,10 @@ namespace SomethingNeedDoing
 
                 Task.Delay(wait, token).Wait(token);
                 wait = TimeSpan.Zero;
-
+                if (this.dataAvailableWaiter.WaitOne(5000))
+                {
+                    Service.ChatManager.SendMessage(step);;
+                }
                 if (!unsafeAction && !this.dataAvailableWaiter.WaitOne(5000))
                     throw new EventFrameworkTimeoutError("Did not receive a response from the game");
             }
